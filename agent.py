@@ -1,19 +1,15 @@
-import time
-import random
 import os
-import json
 import calendar
+import requests
 from groq import Groq
-from playwright.sync_api import sync_playwright
 from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # ─── CONFIG ───────────────────────────────────────────
-GROQ_API_KEY = os.environ["GROQ_API_KEY"]
-LINKEDIN_EMAIL = os.environ["LINKEDIN_EMAIL"]
-LINKEDIN_PASSWORD = os.environ["LINKEDIN_PASSWORD"]
+GROQ_API_KEY          = os.environ["GROQ_API_KEY"]
+LINKEDIN_ACCESS_TOKEN = os.environ["LINKEDIN_ACCESS_TOKEN"]
 
 # ─── DAY THEMES (No Sunday) ───────────────────────────
 DAY_THEMES = {
@@ -90,114 +86,61 @@ Post requirements:
     print("─" * 50)
     return post
 
+# ─── GET LINKEDIN PROFILE URN ─────────────────────────
+def get_profile_urn(token):
+    resp = requests.get(
+        "https://api.linkedin.com/v2/userinfo",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    if resp.status_code != 200:
+        raise Exception(f"Failed to fetch profile URN: {resp.status_code} {resp.text}")
+    data = resp.json()
+    urn = f"urn:li:person:{data['sub']}"
+    print(f"👤 Profile URN: {urn}")
+    return urn
+
 # ─── POST TO LINKEDIN ─────────────────────────────────
 def post_to_linkedin(content):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            slow_mo=50
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800}
-        )
-        page = context.new_page()
+    token = LINKEDIN_ACCESS_TOKEN
 
-        try:
-            # ─── LOGIN ────────────────────────────────
-            print("🔐 Logging into LinkedIn...")
-            page.goto("https://www.linkedin.com/login",
-                      wait_until="domcontentloaded",
-                      timeout=60000)
-            time.sleep(random.uniform(2, 3))
+    print("🔐 Authenticating with LinkedIn API...")
+    urn = get_profile_urn(token)
 
-            page.fill("#username", LINKEDIN_EMAIL)
-            time.sleep(random.uniform(0.5, 1))
-            page.fill("#password", LINKEDIN_PASSWORD)
-            time.sleep(random.uniform(0.5, 1))
-            page.click('[type="submit"]')
+    payload = {
+        "author": urn,
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {
+            "com.linkedin.ugc.ShareContent": {
+                "shareCommentary": {
+                    "text": content
+                },
+                "shareMediaCategory": "NONE"
+            }
+        },
+        "visibility": {
+            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+        }
+    }
 
-            page.wait_for_load_state("domcontentloaded", timeout=60000)
-            time.sleep(random.uniform(4, 6))
+    print("📤 Publishing post via LinkedIn API...")
+    resp = requests.post(
+        "https://api.linkedin.com/v2/ugcPosts",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "X-Restli-Protocol-Version": "2.0.0"
+        },
+        json=payload
+    )
 
-            print(f"📍 Current URL: {page.url}")
-
-            # ─── HANDLE CHECKPOINT ────────────────────
-            if "checkpoint" in page.url:
-                print("⚠️ LinkedIn checkpoint detected — waiting 10s and retrying...")
-                time.sleep(10)
-                page.goto("https://www.linkedin.com/feed/",
-                          wait_until="domcontentloaded",
-                          timeout=60000)
-                time.sleep(5)
-                print(f"📍 URL after retry: {page.url}")
-
-            # ─── VERIFY LOGIN ─────────────────────────
-            if "login" in page.url or "authwall" in page.url:
-                print("❌ Login failed — check LINKEDIN_EMAIL and LINKEDIN_PASSWORD secrets.")
-                page.screenshot(path="error_screenshot.png")
-                return
-
-            # ─── GO TO FEED ───────────────────────────
-            print("🏠 Navigating to feed...")
-            page.goto("https://www.linkedin.com/feed/",
-                      wait_until="domcontentloaded",
-                      timeout=60000)
-            time.sleep(random.uniform(3, 5))
-
-            # ─── OPEN POST EDITOR ─────────────────────
-            print("✍️ Opening post editor...")
-            page.click('[aria-label="Start a post"]', timeout=15000)
-            time.sleep(random.uniform(2, 3))
-
-            # ─── TYPE POST ────────────────────────────
-            print("⌨️ Typing post...")
-            time.sleep(3)
-
-            # Try different editor selectors
-            try:
-                post_area = page.locator('.ql-editor').first
-                post_area.click(timeout=8000)
-                print("✅ Using .ql-editor")
-            except:
-                try:
-                    post_area = page.locator('[contenteditable="true"]').first
-                    post_area.click(timeout=8000)
-                    print("✅ Using contenteditable")
-                except:
-                    page.mouse.click(640, 400)
-                    print("✅ Clicked center of screen")
-
-            time.sleep(2)
-
-            # Type character by character
-            for char in content:
-                page.keyboard.type(char)
-                time.sleep(0.01)
-
-            time.sleep(3)
-
-            # ─── WAIT FOR POST BUTTON ─────────────────
-            print("⏳ Waiting for Post button to enable...")
-            page.wait_for_selector(
-                'button.share-actions__primary-action:not([disabled])',
-                timeout=15000
-            )
-
-            # ─── CLICK POST ───────────────────────────
-            print("📤 Publishing post...")
-            page.locator('button.share-actions__primary-action').click()
-            time.sleep(random.uniform(3, 5))
-
-            print("✅ Successfully posted to LinkedIn!")
-
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            page.screenshot(path="error_screenshot.png")
-            print("📸 Screenshot saved — check error_screenshot.png")
-
-        finally:
-            browser.close()
+    if resp.status_code == 201:
+        post_id = resp.headers.get("x-restli-id", "unknown")
+        print(f"✅ Successfully posted to LinkedIn!")
+        print(f"🔗 Post ID: {post_id}")
+    else:
+        print(f"❌ Failed to post: {resp.status_code}")
+        print(f"📋 Response: {resp.text}")
+        raise Exception(f"LinkedIn API error: {resp.status_code}")
 
 # ─── MAIN ─────────────────────────────────────────────
 if __name__ == "__main__":
