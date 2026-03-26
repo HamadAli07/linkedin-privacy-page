@@ -69,6 +69,7 @@ Post requirements:
 - Start with a curiosity-driven hook to get readers attention (no emojis in first line)
 - {tone_instruction}
 - Conversational tone — write like a real person, not a textbook
+-Include a practical example or code snippet if relevant to the theme. Use triple backticks to format the code block and specify the language, for example, javascript, python, or html.
 - Include a practical example or code snippet if relevant
 - Under 280 words
 - Use short paragraphs and line breaks for readability
