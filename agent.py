@@ -66,9 +66,10 @@ Your job:
 2. Then write a LinkedIn post about that topic
 
 Post requirements:
-- Start with a bold, curiosity-driven hook (no emojis in first line)
+- Start with a curiosity-driven hook to get readers attention (no emojis in first line)
 - {tone_instruction}
 - Conversational tone — write like a real person, not a textbook
+- Include a practical example or code snippet if relevant
 - Under 280 words
 - Use short paragraphs and line breaks for readability
 - End with a question that invites comments
