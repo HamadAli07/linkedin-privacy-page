@@ -1,3 +1,5 @@
 groq
 requests
 python-dotenv
+
+grog api key: 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
