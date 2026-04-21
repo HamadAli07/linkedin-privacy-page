@@ -23,7 +23,7 @@ DAY_THEMES = {
     "Sunday":    "Web3 integrations (wallets, authentication, MetaMask, WalletConnect, real implementation insights)"
 }
 
-# ─── EXPERIENCE CONTEXT (VERY IMPORTANT) ──────────────
+# ─── EXPERIENCE CONTEXT ───────────────────────────────
 EXPERIENCE_CONTEXT = [
     "Built crypto wallet integrations (MetaMask, WalletConnect, Phantom)",
     "Used NextAuth for authentication including signature-based auth",
@@ -33,7 +33,7 @@ EXPERIENCE_CONTEXT = [
     "Built reusable embeddable widgets"
 ]
 
-# ─── HOOK STYLES (to avoid repetitive openings) ───────
+# ─── HOOK STYLES ──────────────────────────────────────
 HOOK_STYLES = [
     "contrarian opinion",
     "mistake/confession",
@@ -58,7 +58,7 @@ def generate_post():
     day, theme = get_todays_theme()
 
     if not theme:
-        print("❌ No theme found for today")
+        print("❌ No theme found")
         return None
 
     client = Groq(api_key=GROQ_API_KEY)
@@ -67,8 +67,7 @@ def generate_post():
     is_technical = day != "Monday"
 
     dm_instruction = (
-        "- End with this line before hashtags: "
-        "'💬 Have questions or working on something similar? DM me — happy to help.'"
+        "\n💬 Have questions or working on something similar? DM me — happy to help."
         if is_technical else ""
     )
 
@@ -87,18 +86,17 @@ def generate_post():
                 "content": f"""
 You are a top 1% LinkedIn content creator and senior software engineer.
 
-Your posts:
-- Feel human, not AI-generated
-- Are based on REAL developer experiences
-- Are specific, not generic
-- Drive engagement (likes, comments, shares)
+Your writing style:
+- Human, conversational, and relatable
+- Clean formatting with lots of spacing
+- No fluff, no generic advice
 
 You NEVER:
-- Repeat topics
-- Write generic advice
-- Sound like a textbook
+- Use markdown like **bold**
+- Write long paragraphs
+- Sound like AI or a textbook
 
-Developer context:
+Use this developer context:
 {EXPERIENCE_CONTEXT}
 """
             },
@@ -110,35 +108,45 @@ Theme: {theme}
 Hook style: {hook_style}
 
 TASK:
-1. Pick a VERY SPECIFIC topic (no generic topics)
+1. Pick a VERY SPECIFIC topic
 2. Write a high-performing LinkedIn post
 
-STRUCTURE:
-1. Hook (1-2 lines, no emoji)
-2. Body (short paragraphs)
-3. Practical takeaway
-4. End with a question
+STRUCTURE (STRICT):
 
-RULES:
+HOOK:
+- 1–2 lines max
+- No emojis
+- Each sentence on new line
+- Must create curiosity
+
+BODY:
+- VERY short paragraphs (1–2 lines max)
+- Add line breaks frequently
+- Tell a real experience or insight
+
+CONTENT:
 - {tone_instruction}
-- Keep under 220 words
-- Use short sentences
-- Add line breaks
-- Add 1 mistake or realization
-- Add 1 "aha moment"
+- Include 1 mistake
+- Include 1 realization (aha moment)
+- Include 1 practical takeaway
 
-OPTIONAL:
-- Add code snippet if relevant (use proper formatting)
-
-{dm_instruction}
+STYLE:
+- No markdown formatting (**bold etc.)
+- Use spacing for emphasis
+- Write like speaking to a developer
 
 ENDING:
-- Add 8-10 hashtags
+- Ask 1 engaging question
+{dm_instruction}
 
-AVOID:
-- "In today's world"
-- "As a developer"
-- Generic content
+HASHTAGS:
+- Add 8–10 relevant hashtags at bottom
+
+RULES:
+- Under 220 words
+- Highly scannable
+- No generic content
+- No clichés
 """
             }
         ]
@@ -161,7 +169,7 @@ def get_profile_urn(token):
     )
 
     if resp.status_code != 200:
-        raise Exception(f"Failed to fetch profile URN: {resp.status_code} {resp.text}")
+        raise Exception(f"Failed to fetch URN: {resp.status_code} {resp.text}")
 
     data = resp.json()
     urn = f"urn:li:person:{data['sub']}"
@@ -204,7 +212,7 @@ def post_to_linkedin(content):
     )
 
     if resp.status_code == 201:
-        print("✅ Successfully posted to LinkedIn!")
+        print("✅ Successfully posted!")
     else:
         print(f"❌ Failed: {resp.status_code}")
         print(resp.text)
