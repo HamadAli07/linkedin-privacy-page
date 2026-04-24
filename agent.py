@@ -310,12 +310,19 @@ def main():
         return
 
     print("\n-----------------------------------")
-    approval = input("Post this to LinkedIn? (y/n): ").strip().lower()
 
-    if approval == "y":
+    is_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
+
+    if is_github_actions:
+        print("🚀 Running in GitHub Actions → Auto posting enabled")
         post_to_linkedin(post)
     else:
-        print("📝 Post skipped.")
+        approval = input("Post this to LinkedIn? (y/n): ").strip().lower()
+
+        if approval == "y":
+            post_to_linkedin(post)
+        else:
+            print("📝 Post skipped.")
 
     print(f"\n🏁 Finished at {datetime.now()}")
 
