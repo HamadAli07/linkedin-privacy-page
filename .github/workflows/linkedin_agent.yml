@@ -21,6 +21,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # agent.py must match latest: Ray PNG is saved first, then Cloudinary (file not deleted),
+      # then LinkedIn attaches that PNG. Old flows that deleted the PNG after Cloudinary cannot attach images.
       - name: Run LinkedIn Agent
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

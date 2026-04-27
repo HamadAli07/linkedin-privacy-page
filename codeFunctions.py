@@ -145,6 +145,18 @@ def generate_code_snippet_image(topic: str, code: str, language: str = "Python",
     )
 
 
+def remove_fenced_code_block(post: str) -> str:
+    """
+    Remove the first markdown fenced code block (```lang ... ```) from post text.
+    Used when the same code is attached as an image on LinkedIn instead of inline.
+    """
+    pattern = r"```\w*\s*\n.*?```"
+    cleaned = re.sub(pattern, "", post, flags=re.DOTALL, count=1)
+    # Tidy excessive blank lines left where the fence was
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 def extract_code_from_post(post: str) -> tuple[str | None, str]:
     """
     Extract code block and language from LinkedIn post.
@@ -216,7 +228,8 @@ def generate_code_image_from_post(post: str, _groq_client=None) -> dict | None:
     upload to Cloudinary, and return image URL.
     
     Returns:
-        {"image_url": str, "code": str, "language": str} or None
+        {"image_url", "code", "language", "local_path"} or None.
+        Local PNG is kept on disk unless CLOUDINARY_DELETE_LOCAL_PNG=true.
     """
     code, language = extract_code_from_post(post)
     
@@ -246,18 +259,27 @@ def generate_code_image_from_post(post: str, _groq_client=None) -> dict | None:
         # Upload to Cloudinary
         print("☁️ Uploading code image to Cloudinary...")
         image_url = upload_to_cloudinary(local_path)
-        
-        # Clean up local file
-        try:
-            os.remove(local_path)
-            print(f"🗑️  Local file deleted → {local_path}")
-        except OSError as e:
-            print(f"⚠️  Could not delete local file: {e}")
-        
+
+        # Keep the PNG on disk by default: LinkedIn image attach reads this file after Cloudinary.
+        # Set CLOUDINARY_DELETE_LOCAL_PNG=true to remove it (e.g. disk-only cron hosts).
+        if os.getenv("CLOUDINARY_DELETE_LOCAL_PNG", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            try:
+                os.remove(local_path)
+                print(f"🗑️  Local file deleted → {local_path}")
+            except OSError as e:
+                print(f"⚠️  Could not delete local file: {e}")
+        else:
+            print(f"ℹ️  Local PNG kept (LinkedIn / reuse): {local_path}")
+
         return {
             "image_url": image_url,
             "code": code,
             "language": language,
+            "local_path": local_path,
         }
     
     except Exception as e:

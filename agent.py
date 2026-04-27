@@ -1,7 +1,9 @@
 import os
 import calendar
-import requests
 import random
+from pathlib import Path
+
+import requests
 from groq import Groq
 from datetime import datetime
 from dotenv import load_dotenv
@@ -219,47 +221,178 @@ def get_profile_urn(token):
 
 
 # =====================================================
+# LINKEDIN IMAGE UPLOAD (Share on LinkedIn — feed image asset)
+# =====================================================
+def _linkedin_v2_headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+        "X-Restli-Protocol-Version": "2.0.0",
+    }
+
+
+def register_linkedin_feed_image_upload(person_urn: str) -> tuple[str, str, dict[str, str]]:
+    """
+    Register a feed-share image upload. Returns (upload_url, digitalmedia_asset_urn, extra_upload_headers).
+    See: https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/share-on-linkedin
+    """
+    url = "https://api.linkedin.com/v2/assets?action=registerUpload"
+    body = {
+        "registerUploadRequest": {
+            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+            "owner": person_urn,
+            "serviceRelationships": [
+                {
+                    "relationshipType": "OWNER",
+                    "identifier": "urn:li:userGeneratedContent",
+                }
+            ],
+        }
+    }
+    response = requests.post(url, headers=_linkedin_v2_headers(), json=body, timeout=60)
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"registerUpload failed: {response.status_code} {response.text}"
+        )
+    data = response.json().get("value") or {}
+    mechanism = (
+        data.get("uploadMechanism", {}).get(
+            "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest", {}
+        )
+    )
+    upload_url = mechanism.get("uploadUrl")
+    asset = data.get("asset")
+    extra_headers = mechanism.get("headers") or {}
+    if not upload_url or not asset:
+        raise RuntimeError(f"registerUpload missing uploadUrl/asset: {data!r}")
+    return upload_url, asset, extra_headers
+
+
+def upload_binary_to_linkedin_image_url(
+    upload_url: str,
+    image_path: str,
+    extra_headers: dict[str, str],
+) -> None:
+    """PUT image bytes to LinkedIn-hosted uploadUrl (curl --upload-file semantics)."""
+    path = Path(image_path)
+    if not path.is_file():
+        raise FileNotFoundError(image_path)
+    data = path.read_bytes()
+    headers = {
+        "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+        "Content-Type": "application/octet-stream",
+        **{k: str(v) for k, v in extra_headers.items()},
+    }
+    # Docs: curl --upload-file → typically PUT with raw body; some endpoints accept POST.
+    response = requests.put(upload_url, headers=headers, data=data, timeout=120)
+    if response.status_code == 405:
+        response = requests.post(upload_url, headers=headers, data=data, timeout=120)
+    if response.status_code not in (200, 201):
+        raise RuntimeError(
+            f"Image binary upload failed: {response.status_code} {response.text[:500]}"
+        )
+
+
+# =====================================================
 # POST TO LINKEDIN
 # =====================================================
-def post_to_linkedin(content):
+def post_to_linkedin(content: str, local_image_path: str | None = None) -> bool:
+    """
+    Publish a UGC post. If local_image_path is set, register + upload the PNG to LinkedIn
+    then attach it (shareMediaCategory IMAGE). Text should omit the markdown code fence
+    when attaching so the snippet appears only as the image.
+    """
     try:
         print("\n🔐 Authenticating LinkedIn...")
         urn = get_profile_urn(LINKEDIN_ACCESS_TOKEN)
 
+        image_asset_urn: str | None = None
+        if local_image_path:
+            try:
+                upload_url, asset, extra = register_linkedin_feed_image_upload(urn)
+                upload_binary_to_linkedin_image_url(
+                    upload_url, local_image_path, extra
+                )
+                image_asset_urn = asset
+                print("📎 Code PNG registered and uploaded for this post")
+            except Exception as exc:
+                print(f"❌ LinkedIn image upload failed: {exc}")
+                return False
+
+        share_inner: dict = {
+            "shareCommentary": {"text": content},
+            "shareMediaCategory": "NONE",
+        }
+        if image_asset_urn:
+            share_inner["shareMediaCategory"] = "IMAGE"
+            share_inner["media"] = [
+                {
+                    "status": "READY",
+                    "description": {"text": "Code snippet"},
+                    "media": image_asset_urn,
+                    "title": {"text": "Code snippet"},
+                }
+            ]
+
         payload = {
             "author": urn,
             "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {
-                        "text": content
-                    },
-                    "shareMediaCategory": "NONE"
-                }
-            },
+            "specificContent": {"com.linkedin.ugc.ShareContent": share_inner},
             "visibility": {
                 "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-            }
+            },
         }
 
         response = requests.post(
             "https://api.linkedin.com/v2/ugcPosts",
-            headers={
-                "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
-                "Content-Type": "application/json",
-                "X-Restli-Protocol-Version": "2.0.0"
-            },
-            json=payload
+            headers=_linkedin_v2_headers(),
+            json=payload,
+            timeout=60,
         )
 
         if response.status_code == 201:
             print("✅ Successfully posted to LinkedIn!")
-        else:
-            print(f"❌ Failed posting: {response.status_code}")
-            print(response.text)
+            return True
+        print(f"❌ Failed posting: {response.status_code}")
+        print(response.text)
+        return False
 
     except Exception as e:
         print(f"❌ LinkedIn posting failed: {e}")
+        return False
+
+
+def publish_linkedin_post(post: str, local_png_path: str | None) -> None:
+    """
+    Post to LinkedIn: attach Ray.so PNG when available (strip inline ``` fence from body).
+    Set SKIP_LINKEDIN_IMAGE_ATTACH=true to keep markdown code in the text and no image.
+    """
+    skip_attach = os.getenv("SKIP_LINKEDIN_IMAGE_ATTACH", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    use_image = bool(local_png_path) and not skip_attach
+
+    if use_image:
+        from codeFunctions import remove_fenced_code_block
+
+        body = remove_fenced_code_block(post)
+        if len(body.strip()) < 30:
+            print(
+                "⚠️ Body too short after removing code block — posting full text with inline code."
+            )
+            post_to_linkedin(post)
+            return
+        ok = post_to_linkedin(body, local_image_path=local_png_path)
+        if not ok:
+            print(
+                "⚠️ LinkedIn publish failed (no duplicate post sent). "
+                "Fix token/scopes or API errors above and re-run if needed."
+            )
+        return
+
+    post_to_linkedin(post)
 
 
 def should_auto_post_linkedin() -> bool:
@@ -281,35 +414,23 @@ def main():
         print("❌ No post generated")
         return
 
-    # Turn fenced code into a PNG (Ray.so). Public URL when Cloudinary env is set; else local file path.
+    # One Ray.so render: PNG for optional Cloudinary + LinkedIn image attachment.
+    local_png_path: str | None = None
     skip_img = os.getenv("SKIP_CODE_SNIPPET_IMAGE", "").strip().lower() in ("1", "true", "yes")
     if not skip_img:
-        from codeFunctions import (
-            _cloudinary_configured,
-            generate_code_image_from_post,
-            save_code_image_from_post_local,
-        )
+        from codeFunctions import _cloudinary_configured, save_code_image_from_post_local
 
-        image_url = None
-        if _cloudinary_configured():
-            result = generate_code_image_from_post(post, None)
-            if result and result.get("image_url"):
-                image_url = result["image_url"]
-                print(f"\n📷 Code snippet image URL:\n{image_url}\n")
-            else:
-                local_path = save_code_image_from_post_local(post)
-                if local_path:
-                    print(
-                        f"\n📷 Saved locally (upload failed or skipped):\n{local_path}\n"
-                    )
-        else:
-            local_path = save_code_image_from_post_local(post)
-            if local_path:
-                print(f"\n📷 Code snippet image saved (local file):\n{local_path}\n")
-                print(
-                    "Tip: set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and "
-                    "CLOUDINARY_API_SECRET in .env to get a shareable HTTPS link.\n"
-                )
+        local_png_path = save_code_image_from_post_local(post)
+        if local_png_path:
+            print(f"\n📷 Code snippet PNG:\n{local_png_path}\n")
+        if local_png_path and _cloudinary_configured():
+            from codeFunctions import upload_to_cloudinary
+
+            try:
+                public_url = upload_to_cloudinary(local_png_path)
+                print(f"☁️ Cloudinary (optional share link):\n{public_url}\n")
+            except Exception as e:
+                print(f"⚠️ Cloudinary upload failed: {e}")
 
     print("\n-----------------------------------")
 
@@ -318,12 +439,12 @@ def main():
             print("🚀 Auto post: GitHub Actions → publishing to LinkedIn")
         else:
             print("🚀 Auto post: LINKEDIN_AUTO_POST enabled → publishing to LinkedIn")
-        post_to_linkedin(post)
+        publish_linkedin_post(post, local_png_path)
     else:
         approval = input("Post this to LinkedIn? (y/n): ").strip().lower()
 
         if approval == "y":
-            post_to_linkedin(post)
+            publish_linkedin_post(post, local_png_path)
         else:
             print("📝 Post skipped. Set LINKEDIN_AUTO_POST=true in .env to skip this prompt.")
 
