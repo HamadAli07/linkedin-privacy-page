@@ -6,6 +6,8 @@ from groq import Groq
 from datetime import datetime
 from dotenv import load_dotenv
 
+from snippet_library import select_post_spec
+
 load_dotenv()
 
 # =====================================================
@@ -22,76 +24,22 @@ if not LINKEDIN_ACCESS_TOKEN:
 
 
 # =====================================================
-# SENIOR CONTENT THEMES
+# FRONTEND CONTENT THEMES (LinkedIn — senior UI / web platform engineers)
 # =====================================================
 DAY_THEMES = {
-    "Monday": "career growth, engineering mindset, leadership lessons",
+    "Monday": "components, design systems, and maintainable UI boundaries",
 
-    "Tuesday": "frontend architecture decisions from real products",
+    "Tuesday": "React / Next.js architecture, data fetching, and client patterns",
 
-    "Wednesday": "authentication, APIs, integrations, security engineering",
+    "Wednesday": "auth UX on the web, secure client–server boundaries, forms",
 
-    "Thursday": "performance, scalability, and system design lessons",
+    "Thursday": "Core Web Vitals, rendering cost, bundles, and perceived performance",
 
-    "Friday": "product engineering, analytics, experimentation, user behavior",
+    "Friday": "instrumentation, experiments, and product signals from the frontend",
 
-    "Saturday": "AI workflows, automation, developer productivity",
+    "Saturday": "DX, AI-assisted UI work, and shipping faster without quality debt",
 
-    "Sunday": "web3 engineering, crypto wallets, blockchain UX"
-}
-
-
-# =====================================================
-# SPECIFIC TOPIC POOLS
-# =====================================================
-TOPIC_POOL = {
-    "Monday": [
-        "What I learned transitioning from junior to product-focused engineer",
-        "Why writing code isn't enough to become a better engineer",
-        "How ownership changed my engineering career"
-    ],
-
-    "Tuesday": [
-        "Why centralized API layers scale better in Next.js apps",
-        "Why most frontend teams overcomplicate state management",
-        "How reusable widget systems are built",
-        "Why frontend architecture matters more than UI polish"
-    ],
-
-    "Wednesday": [
-        "Lessons from implementing signature-based authentication",
-        "Why OAuth implementations fail in production",
-        "Handling API retries in frontend applications",
-        "Authentication edge cases teams ignore"
-    ],
-
-    "Thursday": [
-        "Why premature optimization hurts frontend teams",
-        "Scaling React applications beyond MVP stage",
-        "Performance bottlenecks in large Next.js apps",
-        "How we reduced frontend deployment friction"
-    ],
-
-    "Friday": [
-        "Why analytics should be part of engineering decisions",
-        "What PostHog taught me about product behavior",
-        "Why engineers ignore feature adoption metrics",
-        "Building products based on user behavior data"
-    ],
-
-    "Saturday": [
-        "How AI is improving my development workflow",
-        "Automating repetitive engineering tasks with AI",
-        "Building developer agents",
-        "Using AI tools without becoming dependent"
-    ],
-
-    "Sunday": [
-        "WalletConnect integration lessons",
-        "MetaMask onboarding friction",
-        "Why web3 UX still feels broken",
-        "Building wallet authentication flows"
-    ]
+    "Sunday": "accessibility, responsive design, and inclusive interaction patterns",
 }
 
 
@@ -100,12 +48,12 @@ TOPIC_POOL = {
 # =====================================================
 POST_FORMATS = [
     "contrarian take",
-    "architecture breakdown",
+    "UI architecture breakdown",
     "technical tradeoff",
-    "product lesson",
-    "implementation insight",
-    "scaling lesson",
-    "engineering opinion"
+    "implementation insight in the browser",
+    "performance / UX lesson",
+    "scaling lesson for frontend teams",
+    "engineering opinion for product engineers",
 ]
 
 
@@ -113,15 +61,14 @@ POST_FORMATS = [
 # EXPERIENCE CONTEXT
 # =====================================================
 EXPERIENCE_CONTEXT = """
-Real experience:
-- Built crypto wallet integrations (MetaMask, WalletConnect, Phantom)
-- Implemented signature-based authentication using NextAuth
-- Built production SaaS apps using Next.js and Tailwind
-- Created reusable embeddable widgets
-- Implemented CI/CD pipelines
-- Used PostHog, Mixpanel, Firebase analytics
-- Built dashboards and onboarding systems
-- Worked on fintech and web3 applications
+Real frontend / product engineering experience (ground your post here):
+- Production SaaS and dashboards in Next.js, React, and TypeScript
+- Tailwind and component libraries; design-system-minded CSS
+- Embeddable widgets, iframes, and third-party script boundaries
+- NextAuth and secure session patterns; API layers and retries
+- PostHog / Mixpanel-style product analytics wired from the UI
+- Performance work: bundles, lazy routes, list virtualization, Core Web Vitals
+- Accessibility reviews, forms, and keyboard-first flows
 """
 
 
@@ -131,29 +78,34 @@ Real experience:
 def get_today_info():
     day = calendar.day_name[datetime.now().weekday()]
     theme = DAY_THEMES.get(day)
-    topic = random.choice(TOPIC_POOL[day])
+    spec = select_post_spec(day)
+    topic = spec["topic"]
     format_type = random.choice(POST_FORMATS)
 
-    print(f"\n📅 Today: {day}")
+    print(f"\n📅 Today: {day} (frontend channel)")
     print(f"🎯 Theme: {theme}")
     print(f"🧠 Topic: {topic}")
     print(f"✍️ Format: {format_type}")
 
-    return day, theme, topic, format_type
+    return day, theme, topic, format_type, spec
 
 
 # =====================================================
 # GENERATE POST
 # =====================================================
 def generate_post():
-    day, theme, topic, format_type = get_today_info()
+    day, theme, topic, format_type, spec = get_today_info()
+
+    print(
+        f"📎 Code plan: {spec['title']} ({spec['language']}) — {spec['angle']}"
+    )
 
     client = Groq(api_key=GROQ_API_KEY)
 
     prompt = f"""
-You are a top engineering creator on LinkedIn.
+You are a top LinkedIn creator for senior frontend and product engineers (React/Next ecosystem, CSS, a11y, performance, UX implementation).
 
-Write like a senior product engineer sharing real-world insights.
+Write like someone who ships and maintains real browser-facing products — not generic career advice.
 
 TOPIC:
 {topic}
@@ -167,24 +119,31 @@ FORMAT:
 YOUR EXPERIENCE:
 {EXPERIENCE_CONTEXT}
 
+AUDIENCE:
+- Frontend engineers, UI engineers, and tech leads
+- Keep the narrative anchored in components, the DOM, networks, CSS, TypeScript, and user-visible tradeoffs
+
+CODE BLOCK (you write it — must match this post, not a generic template):
+- Suggested filename to mention or imply in prose: {spec["title"]}
+- Fence language id (exactly): {spec["language"]}
+- What the code must demonstrate (same story as the topic): {spec["angle"]}
+- Invent concrete, readable code (realistic names, one clear scenario) that a senior frontend engineer would ship as an example in a blog post. It must directly illustrate the TOPIC and the angle above—not filler unrelated to your hook and body.
+
 RULES:
-- Sound like an experienced engineer
-- Focus on architecture decisions
-- Discuss tradeoffs
-- Share implementation lessons
-- Talk about scalability/product impact
+- Sound like an experienced frontend or product engineer
+- Focus on UI architecture, rendering, DX, accessibility, or performance as they show up in real apps
+- Discuss tradeoffs (bundle size vs. DX, client vs. server, a11y vs. speed, etc.)
+- Avoid backend-only or DevOps-only tangents unless they directly affect the UI
+- Avoid fake storytelling, beginner tropes, "I spent hours debugging", generic advice, and empty motivation
 - Be concise and sharp
-- Avoid fake storytelling
-- Avoid beginner mistakes
-- Avoid "I spent hours debugging"
-- Avoid generic advice
-- Avoid motivational fluff
+- Include exactly ONE markdown fenced code block: opening ``` then the language id must be exactly {spec["language"]}, newline, then your original code, then closing ``` on its own line. Do not use any other fence language. The code must be the proof for your argument about this topic (you may shorten with `// …` or `<!-- … -->` where helpful).
 
 STRUCTURE:
 1. Strong hook (1-2 lines)
-2. Insightful body
-3. Specific takeaway
-4. End with thoughtful question
+2. Insightful body (place the code block where it supports the argument — usually after 1–2 short paragraphs)
+3. Brief commentary right after the code (what it proves in production)
+4. Specific takeaway
+5. End with a thoughtful question
 
 STYLE:
 - Short paragraphs
@@ -193,10 +152,11 @@ STYLE:
 - Human
 - Technical but accessible
 
-MAX:
-220 words
+LENGTH:
+- Prose (everything except the fenced code block): at most ~220 words
+- Code block: at most ~25 lines; prefer readable over exhaustive
 
-Add 5 relevant hashtags only.
+Add 5 relevant hashtags only (after the question, not inside the code fence).
 """
 
     try:
@@ -206,7 +166,12 @@ Add 5 relevant hashtags only.
             messages=[
                 {
                     "role": "system",
-                    "content": "You write high-performing LinkedIn content for experienced software engineers."
+                    "content": (
+                        "You write high-performing LinkedIn posts for experienced frontend and product engineers "
+                        "(React, Next.js, TypeScript, CSS, HTML, accessibility, performance). "
+                        "Every post includes exactly one markdown fenced code block (javascript, typescript, html, or css only). "
+                        "You compose original code for that post's topic—never paste unrelated catalog examples; the block must prove the post's specific claim."
+                    ),
                 },
                 {
                     "role": "user",
@@ -297,6 +262,13 @@ def post_to_linkedin(content):
         print(f"❌ LinkedIn posting failed: {e}")
 
 
+def should_auto_post_linkedin() -> bool:
+    """Post without prompting in CI, or when LINKEDIN_AUTO_POST is enabled locally."""
+    if os.getenv("GITHUB_ACTIONS", "").strip().lower() == "true":
+        return True
+    return os.getenv("LINKEDIN_AUTO_POST", "").strip().lower() in ("1", "true", "yes")
+
+
 # =====================================================
 # MAIN
 # =====================================================
@@ -309,12 +281,43 @@ def main():
         print("❌ No post generated")
         return
 
+    # Turn fenced code into a PNG (Ray.so). Public URL when Cloudinary env is set; else local file path.
+    skip_img = os.getenv("SKIP_CODE_SNIPPET_IMAGE", "").strip().lower() in ("1", "true", "yes")
+    if not skip_img:
+        from codeFunctions import (
+            _cloudinary_configured,
+            generate_code_image_from_post,
+            save_code_image_from_post_local,
+        )
+
+        image_url = None
+        if _cloudinary_configured():
+            result = generate_code_image_from_post(post, None)
+            if result and result.get("image_url"):
+                image_url = result["image_url"]
+                print(f"\n📷 Code snippet image URL:\n{image_url}\n")
+            else:
+                local_path = save_code_image_from_post_local(post)
+                if local_path:
+                    print(
+                        f"\n📷 Saved locally (upload failed or skipped):\n{local_path}\n"
+                    )
+        else:
+            local_path = save_code_image_from_post_local(post)
+            if local_path:
+                print(f"\n📷 Code snippet image saved (local file):\n{local_path}\n")
+                print(
+                    "Tip: set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and "
+                    "CLOUDINARY_API_SECRET in .env to get a shareable HTTPS link.\n"
+                )
+
     print("\n-----------------------------------")
 
-    is_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
-
-    if is_github_actions:
-        print("🚀 Running in GitHub Actions → Auto posting enabled")
+    if should_auto_post_linkedin():
+        if os.getenv("GITHUB_ACTIONS", "").strip().lower() == "true":
+            print("🚀 Auto post: GitHub Actions → publishing to LinkedIn")
+        else:
+            print("🚀 Auto post: LINKEDIN_AUTO_POST enabled → publishing to LinkedIn")
         post_to_linkedin(post)
     else:
         approval = input("Post this to LinkedIn? (y/n): ").strip().lower()
@@ -322,7 +325,7 @@ def main():
         if approval == "y":
             post_to_linkedin(post)
         else:
-            print("📝 Post skipped.")
+            print("📝 Post skipped. Set LINKEDIN_AUTO_POST=true in .env to skip this prompt.")
 
     print(f"\n🏁 Finished at {datetime.now()}")
 
